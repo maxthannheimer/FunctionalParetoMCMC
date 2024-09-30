@@ -1,10 +1,12 @@
 include("functions.jl")
 
+
+
 #inputs
-gridsize=5 #lenght of fine grid
+gridsize=20 #lenght of fine grid
 N_fine=gridsize^2 #number of fine grid points
-N_coarse=5 #number of weather stations/ conditioning points, obersavation points
-num_sim=200 #number of simulated realizations
+N_coarse=10 #number of weather stations/ conditioning points, obersavation points
+num_sim=100#number of simulated realizations
 
 #true params for simulation
 alpha_true = 1.0
@@ -16,7 +18,7 @@ alpha=1.0
 #Threshold definition as quantile
 #p=0.0
 #threshold= (1-p)^(-1/alpha)
-threshold=0
+threshold=1
 
 #MCMC params
 N_MCMC=20
@@ -57,6 +59,55 @@ observation_x0=reduce(hcat,[sim_data[i,row_x0] for i in 1:num_sim])'
 
 
 
+#play with conditioning
+coord_coarse=hcat(collect(0:(gridsize-1)),collect(0:(gridsize-1)))./gridsize
+
+coord_cond_rows = get_common_rows_indices(coord_fine,floor.(coord_coarse.*gridsize)./gridsize)
+coord_cond_rows = get_common_rows_indices(coord_fine,floor.(coord_coarse.*gridsize)./gridsize)
+
+coord_coarse=coord_fine[coord_cond_rows,:]
+cond_vec=vcat(repeat([1],50),repeat([-1],47))
+cond_vec_complete=vcat(repeat([1],50),repeat([-1],50))
+field=log.(r_log_gaussian(coord_fine, [1.0,1.2],row_x0))
+field=log.(r_cond_log_gaussian(exp.(cond_vec), 1, coord_fine, coord_fine[coord_cond_rows,:],[1.0,1.6], row_x0 ))
+field2=reshape(field, gridsize,gridsize)
+tx=ty=(1:gridsize)/gridsize
+i=60
+
+
+plotd=surface(tx,ty,field2,title="$gridsize × $gridsize FBM simulation, α=$(param[2]), c= $(param[1])")
+#plotd=surface(tx,ty,field2,title="$gridsize × $gridsize FBM simulation, α=$(param[2]), c= $(param[1])")
+plot!(vec(tx),vec(ty), vec((zeros(gridsize).+1)))
+
+#import Pkg; Pkg.add("PyPlot")
+using PyPlot
+
+gr()
+anim = Animation()
+for i in range(0, stop = 90, step = 1)
+    p = surface(tx,ty,field2,title="$gridsize × $gridsize FBM simulation, α=$(param[2]), c= $(param[1])",camera=(i, i/4))
+    #plot!(vec(tx),vec(ty), vec((zeros(gridsize).+1)))
+    plot!(vec(tx),vec(ty), cond_vec_complete, line = (:black, 5, 0.2))
+    #Plots.plot(sol, vars=(1, 2, 3), camera=(i, i))
+    frame(anim, p)
+end
+gif(anim, "gr1.gif", fps=24)
+
+pyplot()
+anim = Animation()
+
+
+
+
+scatter(rand(10),rand(10),rand(10))
+
+for i in coord_fine[coord_cond_rows,:]
+    println(i)
+end
+
+r_cond_log_gaussian(coarse_observation)
+
+Diagonal()
 
 
 # @time(vec(FBM_simu_fast(param,gridsize,10000)[1]'))
@@ -72,21 +123,50 @@ observation_x0=reduce(hcat,[sim_data[i,row_x0] for i in 1:num_sim])'
 # @time( for i in 1:10000
 #         r_cond_log_gaussian(observation_data[1,:],observation_x0[1], coord_fine,coord_coarse,param,row_x0)
 #         end) 
-# #@time (r_cond_log_gaussian_vec(observation_data,observation_x0, coord_fine,coord_coarse,param,row_x0,100) )#coord_x0 (hier c egal)
+#@time (r_cond_log_gaussian_vec(observation_data,observation_x0, coord_fine,coord_coarse,param,row_x0,100) )#coord_x0 (hier c egal)
 
 # size(observation_data,1)
 
 
 
-# @time(r_log_gaussian_vec(coord_fine,param,row_x0,1))
+@time(r_log_gaussian_vec(coord_fine,param,row_x0,1))
 # #cov_mat_for_vectors(coord_fine, coord_coarse, param, coord_fine[row_x0,:])
-# @time r_cond_log_gaussian(observation_data[1,:],observation_x0[1], coord_fine,coord_coarse,param,row_x0) #coord_x0 (hier c egal)
+ @time (
+    
 
- #@time (modified_observation, modified_observation_x0) =exceed_cond_sim(10,num_sim,observation_data,observation_x0,threshold, alpha, coord_fine,coord_coarse,param,row_x0 )
+    
+   a= [    [ r_cond_log_gaussian(observation_data[j,:],observation_x0[j], coord_fine,coord_coarse,param,row_x0) for rep in 1:1000 ]  for j in 1:size(observation_x0,1) ];#coord_x0 (hier c egal)
+  
 
+
+ )
+
+ @time (b=r_cond_log_gaussian_vec(observation_data,observation_x0, coord_fine,coord_coarse,param,row_x0, 1000); ) #coord_x0 (hier c egal)
+
+b[1][1]
+
+
+mean(mean(mean(a.-b))) #@time (modified_observation, modified_observation_x0) =exceed_cond_sim(10,num_sim,observation_data,observation_x0,threshold, alpha, coord_fine,coord_coarse,param,row_x0 )
+
+@time (a=exceed_cond_sim(100,num_sim,observation_data,observation_x0,threshold, alpha, coord_fine,coord_coarse,param,row_x0 ) )
+  
+(modified_observation, modified_observation_x0) = exceed_cond_sim(100,num_sim,observation_data,observation_x0,threshold, alpha, coord_fine,coord_coarse,param,row_x0 )
+
+threshold=1
+(-alpha-1)*sum(log.(modified_observation_x0./threshold))
+
+@time (b=exceed_cond_sim_vec(100,num_sim,observation_data,observation_x0,threshold, alpha, coord_fine,coord_coarse,param,row_x0 ) )
+
+N_est_c=100000
+number_of_excced=size(b[1],1)
+@time( a=l_2_fun(coord_fine, param,row_x0, number_of_excced,alpha,N_est_c) )
+@time( b=l_2_fun_vec(coord_fine, param,row_x0, number_of_excced,alpha,N_est_c) )
  #@time exceed_cond_sim_with_all_info(10,num_sim,normalized_log_observation_data,observation_x0,threshold, alpha, coord_fine,coord_coarse,param,row_x0 )
 
 # (modified_observation, modified_observation_x0) = exceed_cond_sim(10,num_sim,observation_data,observation_x0,threshold, alpha, coord_fine,coord_coarse,param,row_x0 )
+N_est_cond=1000
+@time ( a = l_3_fun(coord_fine, coord_coarse, param, row_x0, observation_data, observation_x0, alpha, N_est_cond) )
+@time ( b = l_3_fun_vec(coord_fine, coord_coarse, param, row_x0, observation_data, observation_x0, alpha, N_est_cond) )
 
 #exceed_cond_sim_fast(10,num_sim,normalized_log_observation_data,observation_x0,threshold, alpha, coord_fine,coord_coarse,param,row_x0 )
                         
@@ -130,9 +210,6 @@ observation_x0=reduce(hcat,[sim_data[i,row_x0] for i in 1:num_sim])'
 FBM_res=FBM_simu_fast_vec(param,gridsize,num_sim)
 FBM_res[1][1]
 r_log_gaussian(coord_fine,param,row_x0)
-coord_fine
-
-
 
 
 
