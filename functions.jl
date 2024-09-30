@@ -419,6 +419,9 @@ end
 #     end
 # end
 
+
+
+
 function exceed_cond_sim(num_runs,num_obs,observation_data,observation_x0,threshold, alpha, coord_fine,coord_coarse,param,row_x0 )
     tmp = r_cond_log_gaussian_vec(observation_data, observation_x0, coord_fine, coord_coarse,param,row_x0,num_runs+1)
     res_ell_X = [0.0 for i in 1:num_obs] 
@@ -448,7 +451,22 @@ function exceed_cond_sim(num_runs,num_obs,observation_data,observation_x0,thresh
 end
 
 
-
+#approximate risk functional exceedances
+function approx_exceeds(observation_data,observation_x0,threshold)
+    num_obs = size(observation_x0,1)
+    res_ell_X = [0.0 for i in 1:num_obs]
+    for i in 1 : num_obs
+        res_ell_X[i] = observation_x0[i]*mean(observation_data[i,:])
+    end
+    if sum(res_ell_X.>threshold)==0
+        println("not a single threshold exceedance")
+    else
+        #likelihood calculation and param updates
+        #find all threshold exccedances and calculate the log of them
+        ind=findall(res_ell_X.>threshold)
+        (observation_data[ind,:],observation_x0[ind])
+    end
+end
 
 #likelihood functions for parameter updates
 
@@ -485,6 +503,17 @@ end
      # minus for 1/c_l (in log)
  end
 
+function l_2_fun_approx_risk(coord_fine, param,row_x0, number_of_exceed,alpha,N_est_c)
+    trend = -vec_vario(param,coord_fine[coord_cond_rows,:],coord_fine[row_x0,:])   
+    C = cov_mat_for_vectors(coord_fine[coord_cond_rows,:],coord_fine[coord_cond_rows,:],  param, coord_fine[row_x0,:])
+    d = MvNormal(trend, C)
+    tmp = exp.(rand(d, N_est_c))
+
+    #tmp = r_log_gaussian_vec(coord_fine,param,row_x0, N_est_c) 
+    -number_of_exceed * log(mean([mean(tmp[:,i] 
+        )^(alpha) for i in 1:N_est_c]))  
+     # minus for 1/c_l (in log)
+ end
 
 
 #  #conditional mean estimator for intergal part #add param zu l_3
@@ -559,6 +588,7 @@ function MCMC(N_MCMC,observation_data,observation_x0,threshold, alpha, coord_fin
     par_beta_vec  = repeat([param[2]],N_MCMC+1)
     par_c_vec = [param[1] for i=1:N_MCMC+1]
     par_alpha_vec = [alpha for i=1:N_MCMC+1]
+    (modified_observation, modified_observation_x0) =approx_exceeds(observation_data,observation_x0,threshold)
     for trial in 1:N_MCMC
         #println("current trial: $trial and current param: $param")
         param[2]=par_beta_vec[trial]
@@ -567,15 +597,15 @@ function MCMC(N_MCMC,observation_data,observation_x0,threshold, alpha, coord_fin
         par_beta_old=par_beta_vec[trial]
         par_c_old=par_c_vec[trial]
         #fixed param
-        (modified_observation, modified_observation_x0) = exceed_cond_sim(5,num_sim,observation_data,observation_x0,threshold, alpha, coord_fine,coord_coarse,param,row_x0 )
-
+        ##(modified_observation, modified_observation_x0) = exceed_cond_sim(5,num_sim,observation_data,observation_x0,threshold, alpha, coord_fine,coord_coarse,param,row_x0 )
         #fixed param
         #gridsize = Int(sqrt(size(coord_fine,1)))
         #coord_cond_rows = get_common_rows_indices(coord_fine,floor.(coord_coarse.*gridsize)./gridsize)
         l1=l_1_fun(coord_fine,coord_coarse,modified_observation,param, modified_observation_x0, row_x0)
-        l2= l_2_fun(coord_fine, param,row_x0, size(modified_observation,1),alpha,N_est_c)
-        l3=l_3_fun(coord_fine, coord_coarse, param, row_x0, modified_observation, modified_observation_x0, alpha, N_est_cond)   
-        log_likelihood_old=sum([l1,l2,l3])
+        #l2            = l_2_fun(coord_fine, param,row_x0, size(modified_observation,1),alpha,N_est_c)
+        l2 = l_2_fun_approx_risk(coord_fine, param,row_x0, size(modified_observation,1),alpha,N_est_c)
+        #l3=l_3_fun(coord_fine, coord_coarse, param, row_x0, modified_observation, modified_observation_x0, alpha, N_est_cond)   
+        log_likelihood_old=sum([l1,l2])
         #new param c
 
         #new param beta
@@ -587,9 +617,10 @@ function MCMC(N_MCMC,observation_data,observation_x0,threshold, alpha, coord_fin
 
         #calculate new log likelihood
         l1=l_1_fun(coord_fine,coord_coarse,modified_observation,param, modified_observation_x0, row_x0)
-        l2= l_2_fun(coord_fine, param,row_x0, size(modified_observation,1),alpha,N_est_c)
-        l3=l_3_fun(coord_fine, coord_coarse, param, row_x0, modified_observation, modified_observation_x0, alpha, N_est_cond)   
-        log_likelihood_new=sum([l1,l2,l3])  
+        #l2            = l_2_fun(coord_fine, param,row_x0, size(modified_observation,1),alpha,N_est_c)
+        l2 = l_2_fun_approx_risk(coord_fine, param,row_x0, size(modified_observation,1),alpha,N_est_c)
+        #l3=l_3_fun(coord_fine, coord_coarse, param, row_x0, modified_observation, modified_observation_x0, alpha, N_est_cond)   
+        log_likelihood_new=sum([l1,l2])  
 
         #MCMC update of param according to acceptance rate calculated with old and new likelihoods
         param[2],log_likelihood_old=parameter_update(par_beta_old,par_beta,log_likelihood_old,log_likelihood_new)
@@ -604,9 +635,10 @@ function MCMC(N_MCMC,observation_data,observation_x0,threshold, alpha, coord_fin
         par_c=param[1]
         #calculate new log likelihood
         l1=l_1_fun(coord_fine,coord_coarse,modified_observation,param, modified_observation_x0, row_x0)
-        l2= l_2_fun(coord_fine, param,row_x0, size(modified_observation,1),alpha,N_est_c)
-        l3=l_3_fun(coord_fine, coord_coarse, param, row_x0, modified_observation, modified_observation_x0, alpha, N_est_cond)   
-        log_likelihood_new=sum([l1,l2,l3])  
+        #l2            = l_2_fun(coord_fine, param,row_x0, size(modified_observation,1),alpha,N_est_c)
+        l2 = l_2_fun_approx_risk(coord_fine, param,row_x0, size(modified_observation,1),alpha,N_est_c)
+        #l3=l_3_fun(coord_fine, coord_coarse, param, row_x0, modified_observation, modified_observation_x0, alpha, N_est_cond)   
+        log_likelihood_new=sum([l1,l2])  
         #MCMC update of param according to acceptance rate calculated with old and new likelihoods
         param[1],log_likelihood_old=parameter_update(par_c_old,par_c,log_likelihood_old,log_likelihood_new)
         #safe param c after MCMC step

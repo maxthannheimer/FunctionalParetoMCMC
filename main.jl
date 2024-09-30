@@ -1,10 +1,10 @@
 include("functions.jl")
 
 #inputs
-gridsize=5#lenght of fine grid
+gridsize=20#lenght of fine grid
 N_fine=gridsize^2 #number of fine grid points
 N_coarse=5 #number of weather stations/ conditioning points, obersavation points
-num_sim=400 #number of simulated realizations
+num_sim=200 #number of simulated realizations
 
 #true params for simulation
 alpha_true = 1.0
@@ -55,7 +55,6 @@ observation_x0=reduce(hcat,[sim_data[i,row_x0] for i in 1:num_sim])'
 
 #run MCMC algorithm
 
-
 println(param_start)
 n_trial_print=100 #print every n-th step
 @time (result= MCMC(N_MCMC,observation_data,observation_x0,threshold, alpha_start, coord_fine,coord_coarse,param_start,row_x0,n_trial_print,N_est_c,N_est_cond))
@@ -80,9 +79,9 @@ hline!(p_alpha, [mean(result["alpha"][N_burn_in+1:N_MCMC+1])],label="Mean estima
 
 
 # with exp(c) 
-histogram(result["c"][N_burn_in+1:N_MCMC+1],title="Histogram for c")
-p_c=scatter(1:N_MCMC+1,exp.(result["c"]),label="$N_MCMC samples of c",title="Markov chain for c, Burn in: $N_burn_in")
-hline!(p_c, [mean(exp.(result["c"][N_burn_in+1:N_MCMC+1]))],label="Mean estimate for c: $(round((mean(exp.(result["c"][N_burn_in+1:N_MCMC+1]))),digits=3))",linewidth=3)
+# histogram(result["c"][N_burn_in+1:N_MCMC+1],title="Histogram for c")
+# p_c=scatter(1:N_MCMC+1,exp.(result["c"]),label="$N_MCMC samples of c",title="Markov chain for c, Burn in: $N_burn_in")
+# hline!(p_c, [mean(exp.(result["c"][N_burn_in+1:N_MCMC+1]))],label="Mean estimate for c: $(round((mean(exp.(result["c"][N_burn_in+1:N_MCMC+1]))),digits=3))",linewidth=3)
 
 
 
